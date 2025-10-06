@@ -1072,8 +1072,9 @@ def analyze_colocalization_lists(coords1_list: list, coords2_list: list,
                                colocalisation_threshold: float = None,
                                cell_edge_tolerance: float = 0.0,
                                filter_boundaries: bool = False,
-                               save_plot: bool = False,                      # <-- NEW
-                               plot_filename: str = "colocalization_plot.png"):  # <-- NEW
+                               save_plot: bool = False,               
+                               plot_filename: str = "colocalization_plot.png",
+                               title: str = None):
     """
     Analyze colocalization for multiple sets of coordinates with option for individual analysis.
     Only considers colocalization within the same cell boundaries, but also allows maxima
@@ -1108,6 +1109,14 @@ def analyze_colocalization_lists(coords1_list: list, coords2_list: list,
     cell_edge_tolerance : float, optional
         Distance (in nm if in_nm=True, else in pixels) from the cell boundary within which
         maxima are still considered as belonging to the cell (default: 0.0)
+    filter_boundaries : bool, optional
+        If True, only consider pairs within the same cell boundaries
+    save_plot : bool, optional
+        If True, save the plot to a file
+    plot_filename : str, optional
+        Filename for the plot. If None, no plot is saved.
+    title : str, optional
+        Title for the plot. If None, a default title is used.
 
     Returns:
     --------
@@ -1385,7 +1394,10 @@ def analyze_colocalization_lists(coords1_list: list, coords2_list: list,
 
     ax.set_xlabel('Distance (nm)' if in_nm else 'Distance (pixels)')
     ax.set_ylabel('Number of pairs')
-    title = 'Distance Distribution (Within Cells)' if cell_masks is not None else 'Distance Distribution'
+    if title is None:
+        title = 'Distance Distribution (Within Cells)' if cell_masks is not None else 'Distance Distribution'
+    else:
+        title = title
     if individual_idx is not None:
         title += f' - {labels[0]}'
     ax.set_title(title)
