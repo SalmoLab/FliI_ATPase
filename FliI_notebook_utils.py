@@ -28,8 +28,8 @@ Returns:
 -------
 The function returns a tuple containing:
 1. nd2_list: List of loaded nd2 image data
-2. mask_C1: List of C1 masks
-3. mask_C2: List of C2 masks
+2. mask_f1: List of C1 masks
+3. mask_f2: List of C2 masks
 4. labeled_mask_phase: List of processed phase masks
 5. position_list: List of position information
 6. marker_list: List of marker colors
@@ -37,7 +37,7 @@ The function returns a tuple containing:
 8. delta_t: Tuple of time information
 
 To unpack the results:
-(nd2_list, mask_C1, mask_f3, labeled_mask_phase,
+(nd2_list, mask_f1, mask_f2, labeled_mask_phase,
  position_list, marker_list, physical_size, delta_t) = results
 """
 
@@ -609,7 +609,7 @@ def filter_labeled_mask_by_size(
         Filtered labeled mask with regions outside size bounds removed
     """
     # Get properties of all regions
-    props = measure .regionprops(labeled_mask)
+    props = measure.regionprops(labeled_mask)
     
     # Create a map of labels to keep
     valid_labels = {
@@ -696,16 +696,16 @@ def load_matched_files(base_path,
         # Use provided paths or default to original structure
         phase_path = cell_mask_path if cell_mask_path else join(processed_path, f'C3{sep}')
         f1_path = foci1_path if foci1_path else join(processed_path, f'C1{sep}')
-        f3_path = foci2_path if foci2_path else join(processed_path, f'C2{sep}')
+        f2_path = foci2_path if foci2_path else join(processed_path, f'C2{sep}')
         
         print(f"Using paths:")
         print(f"Data path: {data_path}")
         print(f"Cell mask path: {phase_path}")
         print(f"Foci1 path: {f1_path}")
-        print(f"Foci2 path: {f3_path}")
+        print(f"Foci2 path: {f2_path}")
         
         # Validate paths
-        for path in [data_path, phase_path, f1_path, f3_path]:
+        for path in [data_path, phase_path, f1_path, f2_path]:
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Directory not found: {path}")
         
@@ -713,8 +713,8 @@ def load_matched_files(base_path,
         position_list = []
         marker_list = []
         nd2_list = []
-        mask_C1 = []
-        mask_C3 = []
+        mask_f1 = []
+        mask_f2 = []
         labeled_mask_phase = []
         physical_size = None
         delta_t = None
@@ -724,25 +724,41 @@ def load_matched_files(base_path,
         if not nd2_files:
             raise FileNotFoundError(f"No .nd2 files found in {data_path}")
             
-        # Create dictionaries for mask files - handle different naming patterns
-        # Extract base names without extensions for matching
+        # Create dictionaries for mask files - handle different naming patterns including .tif/.tiff
+        # and multiple suffix/endings like '_Probabilities', '_mask', '_masks'
+        def mask_base_variants(f, code):
+            suffixes = [
+                f'_{code}_Probabilities',          # e.g., _C3_Probabilities
+                '_Probabilities',
+                f'_{code}_mask',
+                '_mask',
+                f'_{code}_masks',
+                '_masks',
+            ]
+            extensions = ['.tif', '.tiff']
+            for suff in suffixes:
+                for ext in extensions:
+                    if f.endswith(suff + ext):
+                        return f[:-len(suff + ext)]
+            return None
+
         phase_masks = {}
         for f in listdir(phase_path):
-            if f.endswith('_Probabilities.tif') or f.endswith('_C3_Probabilities.tif'):
-                base = f.replace('_C3_Probabilities.tif', '').replace('_Probabilities.tif', '')
+            base = mask_base_variants(f, 'C3')
+            if base is not None:
                 phase_masks[base] = f
-                
+
         f1_masks = {}
         for f in listdir(f1_path):
-            if f.endswith('_Probabilities.tif') or f.endswith('_C1_Probabilities.tif'):
-                base = f.replace('_C1_Probabilities.tif', '').replace('_Probabilities.tif', '')
+            base = mask_base_variants(f, 'C1')
+            if base is not None:
                 f1_masks[base] = f
-                
-        f3_masks = {}
-        for f in listdir(f3_path):
-            if f.endswith('_Probabilities.tif') or f.endswith('_C2_Probabilities.tif'):
-                base = f.replace('_C2_Probabilities.tif', '').replace('_Probabilities.tif', '')
-                f3_masks[base] = f
+
+        f2_masks = {}
+        for f in listdir(f2_path):
+            base = mask_base_variants(f, 'C2')
+            if base is not None:
+                f2_masks[base] = f
         
         processed_count = 0
         skipped_count = 0
@@ -755,7 +771,7 @@ def load_matched_files(base_path,
             has_all_masks = (
                 base in phase_masks and
                 base in f1_masks and
-                base in f3_masks
+                base in f2_masks
             )
             
             if not has_all_masks:
@@ -764,7 +780,7 @@ def load_matched_files(base_path,
                     missing_masks.append('cell mask')
                 if base not in f1_masks:
                     missing_masks.append('foci1')
-                if base not in f3_masks:
+                if base not in f2_masks:
                     missing_masks.append('foci2')
                 print(f"Skipping {nd2_file} - Missing masks: {', '.join(missing_masks)}")
                 skipped_count += 1
@@ -801,33 +817,42 @@ def load_matched_files(base_path,
                 # Load and validate all masks
                 phase_mask = np.array(load_tif(join(phase_path, phase_masks[base])))
                 f1_mask = np.array(load_tif(join(f1_path, f1_masks[base])))
-                f3_mask = np.array(load_tif(join(f3_path, f3_masks[base])))
+                f2_mask = np.array(load_tif(join(f2_path, f2_masks[base])))
+
+                # ilastik segmentation settings (assuming first channel is background, second channel is foci)
+                segmentation_channel = 1
                 
                 # Validate mask dimensions - handle both 3D (x,y,c) and 2D (x,y) masks
                 if len(phase_mask.shape) == 3 and phase_mask.shape[2] >= 2:
-                    # Multi-channel mask - use second channel (index 1) which typically contains probabilities
-                    cell_prob_mask = phase_mask[:,:,0]
+                    # Multi-channel mask - use second channel (index 1) which typically contains probabilities 
+                    cell_prob_mask = phase_mask[:,:,segmentation_channel]
                 else:
                     # Single channel mask - use as is
                     cell_prob_mask = phase_mask
                     
-                # Process cell mask
-                binary_mask = morphology.opening(cell_prob_mask > seg_prob)
-                mask, cnt = label(binary_mask)
-                filtered_mask = filter_labeled_mask_by_size(mask, min_size=10)
+                # Check if phase_mask is already a labeled mask (2D with only 0 and 1 as unique values)
+                if len(np.unique(cell_prob_mask)) == 2 and set(np.unique(cell_prob_mask)) == {0, 1}:
+                    labeled_mask = cell_prob_mask
+                else:
+                    # Process cell mask
+                    binary_mask = morphology.opening(cell_prob_mask > seg_prob)
+                    labeled_mask, cnt = label(binary_mask)
+
+                filtered_mask = filter_labeled_mask_by_size(labeled_mask, min_size=10)
                 filtered_mask = remove_border_touching(filtered_mask, border_distance=3)
                 labeled_mask_phase.append(filtered_mask)
                 
                 # Process foci masks - handle both multi-channel and single channel masks
                 if len(f1_mask.shape) == 3 and f1_mask.shape[2] >= 2:
-                    mask_C1.append(f1_mask[:,:,0] > max_prob)
+                    mask_f1.append(f1_mask[:,:,segmentation_channel] > max_prob)
                 else:
-                    mask_C1.append(f1_mask > max_prob)
+                    mask_f1.append(f1_mask > max_prob)
                     
-                if len(f3_mask.shape) == 3 and f3_mask.shape[2] >= 2:
-                    mask_C3.append(f3_mask[:,:,0] > max_prob)
+                # Getting the second channel of the foci masks
+                if len(f2_mask.shape) == 3 and f2_mask.shape[2] >= 2:
+                    mask_f2.append(f2_mask[:,:,segmentation_channel] > max_prob)
                 else:
-                    mask_C3.append(f3_mask > max_prob)
+                    mask_f2.append(f2_mask > max_prob)
                 
                 processed_count += 1
                     
@@ -847,7 +872,7 @@ def load_matched_files(base_path,
         print(f"Successfully processed: {processed_count} files")
         print(f"Skipped: {skipped_count} files")
         
-        return (nd2_list, mask_C1, mask_C3, labeled_mask_phase, 
+        return (nd2_list, mask_f1, mask_f2, labeled_mask_phase, 
                 position_list, marker_list, physical_size, delta_t)
                 
     except Exception as e:
@@ -1078,7 +1103,7 @@ def analyze_colocalization_lists(coords1_list: list, coords2_list: list,
     """
     Analyze colocalization for multiple sets of coordinates with option for individual analysis.
     Only considers colocalization within the same cell boundaries, but also allows maxima
-    within a given distance (cell_edge_tolerance) to the cell to be considered as valid.
+    within a given distance (cell_edge_tolerance) to be considered as valid.
     Now supports colocalisation_threshold to determine valid/invalid colocalizations.
 
     Parameters:
