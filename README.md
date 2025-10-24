@@ -53,6 +53,11 @@ base_path/
             └── [foci2 masks - *_C2_Probabilities.tif]
 ```
 
+## Segmentation
+
+ilastik was used for the segmentation of foci and cells. Make sure the first label in ilastik is assigned to background and second to foci/ cells.
+If the order has changed the value segmentation_channel the correct channel in FliI_notebook_utils.py in function load_matched_files.
+
 ## Usage
 
 ### Running the Analysis
