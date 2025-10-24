@@ -1339,6 +1339,8 @@ def analyze_colocalization_lists(coords1_list: list, coords2_list: list,
         stats = {
             'label': label,
             'total_pairs': len(pair_mapping),
+            'pair_ratio_coords1': len(set(zip(*pair_mapping))[0]) / len(coords1_filtered),
+            'pair_ratio_coords2': len(set(zip(*pair_mapping))[1]) / len(coords2_filtered),
             'mean_distance': np.mean(min_distances) * (pixel_size if in_nm else 1),
             'median_distance': np.median(min_distances) * (pixel_size if in_nm else 1),
             'max_distance': np.max(min_distances) * (pixel_size if in_nm else 1),
